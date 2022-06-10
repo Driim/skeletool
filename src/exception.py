@@ -1,0 +1,2 @@
+class SkeletoolException(Exception):
+    pass

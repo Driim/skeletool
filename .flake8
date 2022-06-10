@@ -1,0 +1,27 @@
+[flake8]
+select =
+    B,  # bandit
+    B9,
+    BLK,
+    C,
+    E,  # pep8 errors and warnings
+    F,  # pyflakes
+    I,
+    S,  # bandit
+    W   # pep8 errors and warnings
+ignore =
+    B008,  # do not perform function calls in argument defaults
+    B904   # within an except clause, raise exceptions with raise ... from err
+    E203,  # whitespace before ':'
+    E501,  # line too long (82 > 79 characters)
+    E731,  # do not assign a lambda expression, use a def
+    I101,  # the names in your from import are in the wrong order
+    S101,  # use of assert detected
+    W503,  # line break before binary operator
+max-line-length = 100
+max-complexity = 10
+max-cognitive-complexity = 8
+import-order-style = google
+per-file-ignores =
+    */__init__.py: F401
+

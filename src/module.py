@@ -22,8 +22,9 @@ class Module:
     # TODO: улучшить typing
     def __call__(self, cls: Callable):
         cls.__meta_module__ = self.__meta_module__
-    
+
         @wraps(cls)
         def module_wrapper(*args, **kwargs):
             return cls(*args, **kwargs)
+
         return module_wrapper
