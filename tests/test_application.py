@@ -16,9 +16,10 @@ class TestApplication:
     def test_should_resolve_providers(self):
         @Injectable()
         class ExampleProvider:
-            pass
+            def check(self) -> bool:
+                return True
 
-        @Module(MetaModule(providers=[ExampleProvider]))
+        @Module(MetaModule(providers=[ExampleProvider], exports=[ExampleProvider]))
         class ExampleModule:
             pass
 
