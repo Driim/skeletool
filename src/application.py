@@ -9,7 +9,7 @@ T = TypeVar("T")
 
 
 class ApplicationException(SkeletoolException):
-    pass
+    ...
 
 
 class ApplicationModule(Protocol):
@@ -22,10 +22,12 @@ class Application:
             root_module.__meta_module__,
             MetaModule,
         ):
-            raise ApplicationException()
+            raise ApplicationException(
+                f"{str(root_module)} does not implement {ApplicationModule} protocol",
+            )
 
         self._container = Container(root_module)
 
     def resolve(self, cls: Callable[..., T]) -> T:
         self._container.build_container()
-        return self._container.get_instance(cls)
+        return self._container.get_provider_instance(cls)
