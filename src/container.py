@@ -1,13 +1,11 @@
+from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, List, TypeVar, cast, get_type_hints
+from typing import Any, Callable, List, TypeVar, cast, get_type_hints
 
-from src.module import MetaModule
+from src.module import MetaModule, Module
 
 from .exception import SkeletoolException
-
-if TYPE_CHECKING:
-    from .application import ApplicationModule
 
 
 T = TypeVar("T")
@@ -20,21 +18,40 @@ class ContainerException(SkeletoolException):
 @dataclass
 class ProviderParams:
     constructor: type
-    dependencies: set[str] = field(default_factory=set)
+    dependencies: list[str] = field(default_factory=list)
     is_visited: bool = field(default=False)
 
 
-class Container:
+class AbstractContainer(ABC):
+    @abstractmethod
+    def build_container(self) -> None:
+        ...
+
+    @abstractmethod
+    def get_provider_instance(self, cls: str | Callable[..., T]) -> T:
+        ...
+
+    @abstractmethod
+    def get_exported_providers(self) -> dict[str, Any]:
+        ...
+
+
+class SingletonContainer(AbstractContainer):
     # Вещи на которые нужно будет обратить внимание:
     #  - в дереве могут образоваться циклы
     #  - не забыть про разные scope провайдеров
     #  - глобавльные провайдеры
-    def __init__(self, module: "ApplicationModule", globals: dict = None):
+    def __init__(
+        self,
+        module: Module,
+        globals: dict[str, Any],
+        initialized_modules: dict[str, AbstractContainer],
+    ):
         self._exported: dict[str, Any] = dict()
-        self._globals = globals or dict()
+        self._globals = globals
         self._module = module
-        self._imported = set()
         self._providers: dict[str, Any] = None
+        self._initialized_modules = initialized_modules
 
     def build_container(self) -> None:
         module_meta = self._module.__meta_module__
@@ -52,6 +69,8 @@ class Container:
 
         self._exported = self._get_exported_list(module_meta)
 
+        self._initialized_modules[self._module.__name__] = self
+
     def _build_obj_graph(self, providers: List[type]) -> dict[str, ProviderParams]:
         obj_graph: dict[str, ProviderParams] = dict()
 
@@ -60,7 +79,7 @@ class Container:
             constr_params = get_type_hints(provider.__init__)
             constr_params.pop("return", None)
 
-            provider_deps = set()
+            provider_deps = []
             obj_graph[provider.__name__] = ProviderParams(provider, provider_deps)
 
             for param in constr_params.values():
@@ -69,7 +88,7 @@ class Container:
                         f"Provider {provider.__name__} cyclic dependency",
                     )
 
-                provider_deps.add(param.__name__)
+                provider_deps.append(param.__name__)
 
             # TODO: нужно убедиться что граф не содержит
             #  циклов, т.е. является Directed Acyclic Graph
@@ -110,14 +129,12 @@ class Container:
 
         result_graph[name] = dep_graph[name]
 
-    def get_imported_providers(self, imports: List) -> dict[str, Any]:
+    def get_imported_providers(self, imports: List[type]) -> dict[str, Any]:
         providers: dict[str, Any] = dict()
         providers_names: set[str] = set()
 
         for imported_module in imports:
-            container = Container(imported_module, self._globals)
-            container.build_container()
-            self._imported.add(container)
+            container = self._get_imported_container(imported_module)
 
             exported_providers = container.get_exported_providers()
 
@@ -131,15 +148,27 @@ class Container:
 
         return providers
 
+    def _get_imported_container(self, imported_module: Module) -> AbstractContainer:
+        if imported_module.__name__ in self._initialized_modules:
+            return self._initialized_modules[imported_module.__name__]
+
+        container = SingletonContainer(
+            imported_module,
+            self._globals,
+            self._initialized_modules,
+        )
+        container.build_container()
+        return container
+
     def _instantiate_providers(
         self,
         obj_graph: dict[str, ProviderParams],
         imported: dict[str, Any],
     ) -> dict[str, Any]:
-        providers: dict[str, Any] = imported.copy()
+        providers: dict[str, Any] = imported
 
         for name, params in obj_graph.items():
-            deps: set = params.dependencies
+            deps = params.dependencies
             constructor = params.constructor
 
             if len(deps) == 0:
@@ -150,7 +179,9 @@ class Container:
             for dep_name in deps:
                 instance = providers.get(dep_name)
                 if not instance:
-                    raise ContainerException("Не хватает зависимости")
+                    raise ContainerException(
+                        f"Instantiation error of the {name} class, the {dep_name} class is missing",
+                    )
 
                 args.append(instance)
 
@@ -185,9 +216,26 @@ class Container:
             instance = self._globals.get(cls_name)
 
         if instance is None:
-            raise ContainerException()
+            raise ContainerException(f"{cls_name} is missing")
 
         return cast(T, instance)
 
     def get_exported_providers(self) -> dict[str, Any]:
         return self._exported
+
+
+class Container:
+    def __init__(self, module: Module) -> None:
+        self._globals: dict[str, Any] = dict()
+        self._initialized_modules: dict[str, AbstractContainer] = dict()
+        self._container_impl = SingletonContainer(
+            module,
+            self._globals,
+            self._initialized_modules,
+        )
+
+    def build_container(self) -> None:
+        return self._container_impl.build_container()
+
+    def get_provider_instance(self, cls: str | Callable[..., T]) -> T:
+        return self._container_impl.get_provider_instance(cls)

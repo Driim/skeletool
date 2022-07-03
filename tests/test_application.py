@@ -23,7 +23,7 @@ class TestApplication:
         class ExampleModule:
             pass
 
-        app = Application(ExampleModule())
+        app = Application(ExampleModule)
         provider = app.resolve(ExampleProvider)
 
         assert provider

@@ -1,5 +1,4 @@
-import pytest
-from src.container import Container, ContainerException
+from src.container import Container
 from src.injectable import Injectable
 from src.module import MetaModule, Module
 
@@ -14,7 +13,7 @@ class TestContainer:
         class ExampleModule:
             pass
 
-        container = Container(ExampleModule())
+        container = Container(ExampleModule)
         container.build_container()
         instance = container.get_provider_instance(ExampleProvider)
 
@@ -41,7 +40,7 @@ class TestContainer:
         class ExampleModule:
             pass
 
-        container = Container(ExampleModule())
+        container = Container(ExampleModule)
         container.build_container()
         instance = container.get_provider_instance(ExampleDependant)
 
@@ -69,7 +68,7 @@ class TestContainer:
         class ExampleModule:
             pass
 
-        container = Container(ExampleModule())
+        container = Container(ExampleModule)
         container.build_container()
         instance = container.get_provider_instance(C)
 
@@ -95,29 +94,45 @@ class TestContainer:
         class BModule:
             pass
 
-        container = Container(BModule())
+        container = Container(BModule)
         container.build_container()
         instance = container.get_provider_instance(B)
 
         assert instance
         assert isinstance(instance, B)
 
-    @pytest.mark.skip
-    def test_should_handle_circular_dep(self):
+    def test_should_init_imported_only_once(self):
         @Injectable()
         class A:
-            def __init__(self, dep: "B") -> None:
+            def __init__(self) -> None:
                 pass
 
-        @Injectable()
-        class B:
-            def __init__(self, dep: "A") -> None:
-                pass
-
-        @Module(MetaModule(providers=[A, B], exports=[B]))
+        @Module(MetaModule(providers=[A], exports=[A]))
         class AModule:
             pass
 
-        container = Container(AModule())
-        with pytest.raises(ContainerException):
-            container.build_container()
+        @Injectable()
+        class B:  # noqa: B903
+            def __init__(self, depA: A) -> None:
+                self.depA = depA
+
+        @Module(MetaModule(providers=[B], exports=[B], imports=[AModule]))
+        class BModule:
+            pass
+
+        @Injectable()
+        class C:  # noqa: B903
+            def __init__(self, depA: A, depB: B) -> None:
+                self.depA = depA
+                self.depB = depB
+
+        @Module(MetaModule(providers=[C], exports=[C], imports=[AModule, BModule]))
+        class CModule:
+            pass
+
+        container = Container(CModule)
+        container.build_container()
+
+        instance = container.get_provider_instance(C)
+
+        assert instance.depA == instance.depB.depA
